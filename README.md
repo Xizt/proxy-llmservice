@@ -63,7 +63,7 @@ Internal Users
 
 ## Database Schema
 
-Three tables in PostgreSQL (code-first via EF Core migrations):
+Three tables in PostgreSQL DB (code-first via EF Core migrations):
 
 - **Requests** — request lifecycle, status, evaluation outcome
 - **PrimaryLlmResponses** — buffered primary streaming response + latency
