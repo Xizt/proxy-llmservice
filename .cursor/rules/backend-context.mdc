@@ -1,0 +1,175 @@
+---
+description: .NET layered backend, API, and database standards
+globs: **/*.cs
+---
+
+You are an expert in .NET, ASP.NET Core, C#, Entity Framework Core, and layered backend architecture.
+
+## Architecture Overview
+
+The backend follows a layered architecture with clear separation of concerns:
+
+1. **Server** — API controllers and server configuration
+2. **BusinessLayer** — Business logic and service implementations
+3. **Models** — DTOs for requests and responses
+4. **DataLayer** — Data access, entity models, and database context
+5. **Common** — Shared utilities and constants
+
+## Project Structure
+
+### Server
+- **Controllers/** — API endpoints organized by domain
+- **Program.cs** — Application configuration, dependency injection, and middleware
+- **appsettings.json** — Environment-specific configuration
+
+### BusinessLayer
+- **Auth/** — Authentication services and providers
+- **Common/** — Business-specific shared utilities
+- **Extensions/** — Extension methods
+
+### Models
+- **Request/** — Incoming API request DTOs
+- **Response/** — Outgoing API response DTOs
+- **Common/** — Shared model definitions
+- **Auth/** — Authentication-related models
+
+### DataLayer
+- **Models/** — Entity definitions mapped to database tables
+- **Migrations/** — EF Core migrations
+- **Common/** — Data access utilities
+
+### Common
+- Shared utilities and constants used across all projects
+
+## Code Organization
+
+- One class per file with a matching filename.
+- Namespaces reflect project and folder structure.
+- Group related files in domain-specific folders.
+- Enable and respect nullable reference types project-wide.
+- Prefer `record` types for immutable DTOs and value objects.
+- Use `IReadOnlyList` / `IReadOnlyCollection` for return types when callers should not mutate results.
+
+## Documentation
+
+- Add XML comments to all public members, classes, and methods.
+- Include summary blocks and parameter documentation.
+- Document return values, including null and empty-collection edge cases.
+
+## Dependency Injection
+
+- Define services behind interfaces (e.g. `IAuthService`).
+- Inject dependencies through constructors.
+- Register services with appropriate lifetimes in `Program.cs`.
+- Use Singleton for stateless services, Scoped for per-request services (e.g. `DbContext`), and Transient only when a fresh instance is genuinely needed.
+- Never resolve services manually from `IServiceProvider` inside business logic.
+
+## Entity Design
+
+- All database entities inherit from `BaseEntity`.
+- Include audit fields: created/modified timestamps and user tracking.
+- Define clear navigation properties and relationships.
+
+## Error Handling
+
+- Use centralized exception-handling middleware for unhandled exceptions.
+- Return Problem Details (RFC 7807) with type, title, status, detail, and instance.
+- Define custom domain exceptions (e.g. `NotFoundException`, `ConflictException`) for expected business rule violations.
+- For expected failures such as validation, prefer a result object over throwing exceptions.
+- Use guard clauses at method entry.
+- Never return stack traces, internal paths, or raw database errors in API responses.
+- Log exceptions with full context (correlation ID, user, operation).
+
+## Logging
+
+- Inject `ILogger<T>` (or Serilog) into every service.
+- Use log levels intentionally: Debug, Information, Warning, Error, Critical.
+- Use structured message templates with named parameters instead of string interpolation.
+- Propagate a correlation/request ID through the request pipeline.
+- Never log passwords, tokens, API keys, PII, or sensitive request bodies.
+
+## API Design
+
+- Use RESTful endpoints with clear route attributes.
+- Keep controllers thin; return appropriate action results.
+- Use DTOs for request/response instead of exposing entities.
+- Use correct HTTP status codes: 200, 201 (with Location), 204, 400, 401, 403, 404, 409, 500.
+- Paginate all list endpoints; never return unbounded collections.
+- Version APIs to allow non-breaking evolution.
+- Maintain Swagger/OpenAPI docs with `ProducesResponseType` for all status codes.
+- Use a consistent response envelope (e.g. `{ data, errors, meta }`).
+- Make PUT and DELETE idempotent; consider idempotency keys for POST where appropriate.
+
+## Input Validation & Sanitization
+
+- Use data annotations on request DTOs (`Required`, `MaxLength`, `Range`, `RegularExpression`, etc.).
+- Use FluentValidation with one validator class per request DTO for complex rules.
+- Validate `ModelState` in controllers (or via a filter) and return 400 with detailed errors.
+- Sanitize user inputs to prevent XSS.
+- Prefer whitelists (enums, known values) over blacklists.
+
+## Authentication & Authorization
+
+- Use JWT tokens and claims-based identity.
+- Support external authentication providers where needed.
+- Apply `[Authorize]` and policy/role-based authorization; default to requiring authentication.
+- Follow least privilege.
+- Use short-lived access tokens with refresh token rotation.
+- Never hardcode secrets; use User Secrets in development and a vault in production.
+
+## Security
+
+- Enforce HTTPS in production; use HSTS.
+- Configure CORS with explicit allowed origins; never use `*` in production.
+- Apply rate limiting on public and authentication endpoints.
+- Use anti-forgery tokens for form-based endpoints where applicable.
+- Set security headers: `X-Content-Type-Options`, `X-Frame-Options`, `Content-Security-Policy`, `Referrer-Policy`.
+- Scan NuGet dependencies for known vulnerabilities.
+
+## Performance
+
+- Never block on async code with `.Result` or `.Wait()`; propagate `async`/`await` through the call chain.
+- Accept and pass `CancellationToken` in all async methods.
+- Use `IMemoryCache` for frequently accessed, rarely changing data; use distributed cache for multi-instance deployments.
+- Enable response compression for text-based payloads.
+- Select only needed columns; use projections instead of loading full entities when possible.
+- Prefer explicit eager loading (`Include`/`ThenInclude`) or projection over lazy loading.
+
+## Service Layer Guidelines
+
+- Return result objects (e.g. `ServiceResult<T>`) for success/failure instead of relying solely on exceptions.
+- Do not depend on `HttpContext` or ASP.NET-specific types in business services; pass required data as parameters.
+- Design service methods to be safely retried where possible.
+- Define transaction scope at the service layer, not in repositories or controllers.
+
+## Best Practices
+
+1. Do not reference DataLayer directly from Controllers.
+2. Avoid static methods; use dependency injection.
+3. Keep business logic in services, not controllers.
+4. Follow naming conventions:
+   - Interfaces prefixed with `I` (e.g. `IAuthService`)
+   - DTOs suffixed with `Dto` (e.g. `UserDto`)
+   - Controllers suffixed with `Controller`
+   - Async methods suffixed with `Async`
+5. Bind configuration sections to classes using the Options pattern.
+6. Write integration tests with `WebApplicationFactory`.
+7. Dispose resources with `using` or `IAsyncDisposable`.
+8. Use `IHttpClientFactory`; never instantiate `HttpClient` directly.
+
+## Database Practices
+
+1. Use EF Core code-first with migrations.
+2. Use soft deletes via an `IsDeleted` flag.
+3. Track audit trails for creation and modification.
+4. Use transactions for operations that modify multiple entities.
+5. Avoid N+1 queries; use `Include`/`ThenInclude` and profile queries during development.
+6. Add indexes on columns used in WHERE, JOIN, and ORDER BY clauses.
+7. Always use parameterized queries or EF Core LINQ; never concatenate user input into raw SQL.
+8. Write idempotent migrations; use `IF NOT EXISTS` checks in raw SQL migrations.
+9. Rely on EF Core connection pooling.
+10. Seed reference/lookup data via `HasData` or a dedicated seeding service.
+
+## Verification
+
+- Verify changes by building the server project before finishing.
