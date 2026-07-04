@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>LlmShadow.Evaluation</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\LlmShadow.Common\LlmShadow.Common.csproj" />
+    <ProjectReference Include="..\LlmShadow.Models\LlmShadow.Models.csproj" />
+  </ItemGroup>
+</Project>
