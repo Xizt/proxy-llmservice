@@ -7,10 +7,18 @@
     <RootNamespace>LlmShadow.UnitTests</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <!-- Shared libraries -->
     <ProjectReference Include="..\..\src\Shared\LlmShadow.Common\LlmShadow.Common.csproj" />
     <ProjectReference Include="..\..\src\Shared\LlmShadow.Models\LlmShadow.Models.csproj" />
     <ProjectReference Include="..\..\src\Shared\LlmShadow.DataLayer\LlmShadow.DataLayer.csproj" />
     <ProjectReference Include="..\..\src\Shared\LlmShadow.Evaluation\LlmShadow.Evaluation.csproj" />
+    <ProjectReference Include="..\..\src\Shared\LlmShadow.Inference\LlmShadow.Inference.csproj" />
+    <ProjectReference Include="..\..\src\Shared\LlmShadow.Messaging\LlmShadow.Messaging.csproj" />
+    <!-- Service projects (4 services under test) -->
+    <ProjectReference Include="..\..\src\Services\LlmShadow.ProxyService\LlmShadow.ProxyService.csproj" />
+    <ProjectReference Include="..\..\src\Services\LlmShadow.CompareService\LlmShadow.CompareService.csproj" />
+    <ProjectReference Include="..\..\src\Services\LlmShadow.Evaluator\LlmShadow.Evaluator.csproj" />
+    <ProjectReference Include="..\..\src\Services\LlmShadow.SecondaryProcessor\LlmShadow.SecondaryProcessor.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
@@ -22,5 +30,8 @@
     <PackageReference Include="Moq" Version="4.20.72" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="8.0.4" />
     <PackageReference Include="FluentAssertions" Version="6.12.2" />
+    <PackageReference Include="Microsoft.Extensions.Caching.Memory" Version="8.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Configuration" Version="8.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Options" Version="8.0.2" />
   </ItemGroup>
 </Project>
