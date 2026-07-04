@@ -1,0 +1,86 @@
+name: Release
+
+# Deploys one specific, already-built buildId (produced by the Build workflow) to a
+# chosen DigitalOcean App Platform environment (dev, int or prod).
+#
+# No secrets are stored in this file or in the checked-in app specs: every sensitive
+# value is a placeholder (e.g. ${DATABASE_CONNECTION_STRING}) that is substituted at
+# deploy time from the GitHub Environment's encrypted secrets, scoped per environment.
+# Promoting to `prod` is additionally gated by that GitHub Environment's required
+# reviewers rule (configured in repo Settings > Environments, not in YAML).
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target DigitalOcean environment
+        type: choice
+        required: true
+        options:
+          - dev
+          - int
+          - prod
+      build_id:
+        description: Build id to deploy (the tag printed in the Build workflow summary)
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy build ${{ inputs.build_id }} to ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    # A single job (rather than two) so the environment's required-reviewers gate
+    # (e.g. on "prod") is only requested once per release, before verification
+    # and deployment both run.
+    environment: ${{ inputs.environment }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install doctl
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
+      - name: Verify every component image was published with this build id
+        run: |
+          set -euo pipefail
+          for repo in proxy-service compare-service evaluator secondary-processor; do
+            echo "Checking $repo:${{ inputs.build_id }} ..."
+            if ! doctl registry repository list-tags "$repo" --format Tag --no-header \
+                | grep -qx "${{ inputs.build_id }}"; then
+              echo "::error::Image tag '${{ inputs.build_id }}' was not found for repository '$repo'. Run the Build workflow first."
+              exit 1
+            fi
+          done
+
+      - name: Deploy App Platform spec
+        id: deploy
+        uses: digitalocean/app_action/deploy@v2
+        env:
+          IMAGE_TAG: ${{ inputs.build_id }}
+          DATABASE_CONNECTION_STRING: ${{ secrets.DATABASE_CONNECTION_STRING }}
+          REDIS_CONNECTION_STRING: ${{ secrets.REDIS_CONNECTION_STRING }}
+          INFERENCE_MODEL_ACCESS_KEY: ${{ secrets.INFERENCE_MODEL_ACCESS_KEY }}
+          INFERENCE_PRIMARY_MODEL: ${{ vars.INFERENCE_PRIMARY_MODEL }}
+          INFERENCE_CANDIDATE_MODEL: ${{ vars.INFERENCE_CANDIDATE_MODEL }}
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+          app_spec_location: infra/app-platform/${{ inputs.environment }}.app.yaml
+          print_build_logs: true
+          print_deploy_logs: true
+
+      - name: Write summary
+        run: |
+          {
+            echo "## Deployed build \`${{ inputs.build_id }}\` to \`${{ inputs.environment }}\`"
+            echo
+            echo "Live URL: ${{ fromJson(steps.deploy.outputs.app).live_url }}"
+          } >> "$GITHUB_STEP_SUMMARY"

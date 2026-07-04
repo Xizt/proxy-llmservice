@@ -1,0 +1,151 @@
+# DigitalOcean App Platform spec — prod environment.
+#
+# Deployed by .github/workflows/release.yml via `digitalocean/app_action/deploy@v2`.
+# ${PLACEHOLDER} values are substituted at deploy time from the GitHub Environment
+# named "prod" (Settings > Environments > prod > Secrets/Variables). None of these
+# values are stored in this file or anywhere else in the repository.
+#
+# The "prod" GitHub Environment should have required reviewers configured so every
+# release to production needs manual approval before this spec is applied.
+name: llmshadow-prod
+region: nyc
+
+services:
+  - name: proxy-service
+    image:
+      registry_type: DOCR
+      repository: proxy-service
+      tag: ${IMAGE_TAG}
+    http_port: 8080
+    instance_count: 2
+    instance_size_slug: apps-s-2vcpu-4gb
+    routes:
+      - path: /
+    health_check:
+      http_path: /health
+      initial_delay_seconds: 10
+      period_seconds: 10
+    envs:
+      - key: ASPNETCORE_ENVIRONMENT
+        scope: RUN_TIME
+        type: GENERAL
+        value: Production
+      - key: Database__ConnectionString
+        scope: RUN_TIME
+        type: SECRET
+        value: ${DATABASE_CONNECTION_STRING}
+      - key: Redis__ConnectionString
+        scope: RUN_TIME
+        type: SECRET
+        value: ${REDIS_CONNECTION_STRING}
+      - key: Inference__ModelAccessKey
+        scope: RUN_TIME
+        type: SECRET
+        value: ${INFERENCE_MODEL_ACCESS_KEY}
+      - key: Inference__PrimaryModel
+        scope: RUN_TIME
+        type: GENERAL
+        value: ${INFERENCE_PRIMARY_MODEL}
+      - key: Inference__CandidateModel
+        scope: RUN_TIME
+        type: GENERAL
+        value: ${INFERENCE_CANDIDATE_MODEL}
+      - key: Inference__PrimaryTimeoutSeconds
+        scope: RUN_TIME
+        type: GENERAL
+        value: "60"
+      - key: Inference__CandidateTimeoutSeconds
+        scope: RUN_TIME
+        type: GENERAL
+        value: "120"
+
+  - name: compare-service
+    image:
+      registry_type: DOCR
+      repository: compare-service
+      tag: ${IMAGE_TAG}
+    http_port: 8080
+    instance_count: 2
+    instance_size_slug: apps-s-1vcpu-2gb
+    routes:
+      - path: /compare
+    health_check:
+      http_path: /health
+      initial_delay_seconds: 10
+      period_seconds: 10
+    envs:
+      - key: ASPNETCORE_ENVIRONMENT
+        scope: RUN_TIME
+        type: GENERAL
+        value: Production
+      - key: Database__ConnectionString
+        scope: RUN_TIME
+        type: SECRET
+        value: ${DATABASE_CONNECTION_STRING}
+
+workers:
+  - name: secondary-processor
+    image:
+      registry_type: DOCR
+      repository: secondary-processor
+      tag: ${IMAGE_TAG}
+    instance_count: 2
+    instance_size_slug: apps-s-2vcpu-4gb
+    envs:
+      - key: ASPNETCORE_ENVIRONMENT
+        scope: RUN_TIME
+        type: GENERAL
+        value: Production
+      - key: Database__ConnectionString
+        scope: RUN_TIME
+        type: SECRET
+        value: ${DATABASE_CONNECTION_STRING}
+      - key: Redis__ConnectionString
+        scope: RUN_TIME
+        type: SECRET
+        value: ${REDIS_CONNECTION_STRING}
+      - key: Inference__ModelAccessKey
+        scope: RUN_TIME
+        type: SECRET
+        value: ${INFERENCE_MODEL_ACCESS_KEY}
+      - key: Inference__CandidateModel
+        scope: RUN_TIME
+        type: GENERAL
+        value: ${INFERENCE_CANDIDATE_MODEL}
+      - key: Inference__CandidateTimeoutSeconds
+        scope: RUN_TIME
+        type: GENERAL
+        value: "120"
+      - key: Processor__MaxDegreeOfParallelism
+        scope: RUN_TIME
+        type: GENERAL
+        value: "8"
+      - key: Redis__MaxRetryCount
+        scope: RUN_TIME
+        type: GENERAL
+        value: "3"
+
+  - name: evaluator
+    image:
+      registry_type: DOCR
+      repository: evaluator
+      tag: ${IMAGE_TAG}
+    instance_count: 1
+    instance_size_slug: apps-s-1vcpu-2gb
+    envs:
+      - key: ASPNETCORE_ENVIRONMENT
+        scope: RUN_TIME
+        type: GENERAL
+        value: Production
+      - key: Database__ConnectionString
+        scope: RUN_TIME
+        type: SECRET
+        value: ${DATABASE_CONNECTION_STRING}
+      - key: Evaluator__IntervalSeconds
+        scope: RUN_TIME
+        type: GENERAL
+        value: "30"
+      - key: Evaluator__BatchSize
+        scope: RUN_TIME
+        type: GENERAL
+        value: "200"

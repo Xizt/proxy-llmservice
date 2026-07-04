@@ -1,0 +1,142 @@
+name: Build
+
+# CI pipeline: restores/builds the whole solution, runs unit tests, then (only for
+# pushes to main) builds and pushes a Docker image per component to the DigitalOcean
+# Container Registry (DOCR), all tagged with the same immutable build id.
+#
+# The resulting build id is what you pass as `build_id` to the Release workflow to
+# promote that exact build to dev / int / prod.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_VERSION: "8.0.x"
+  SOLUTION: ProxyLlmService.sln
+  TEST_PROJECT: tests/LlmShadow.UnitTests/LlmShadow.UnitTests.csproj
+
+jobs:
+  build-and-test:
+    name: Build & Test
+    runs-on: ubuntu-latest
+    outputs:
+      build_id: ${{ steps.build-id.outputs.value }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Compute build id
+        id: build-id
+        # A short, immutable, traceable id used as the Docker image tag for every
+        # component produced by this workflow run.
+        run: echo "value=$(git rev-parse --short=12 HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore
+        run: dotnet restore "$SOLUTION"
+
+      - name: Build solution (all projects)
+        run: dotnet build "$SOLUTION" --configuration Release --no-restore
+
+      - name: Run unit tests
+        run: >
+          dotnet test "$TEST_PROJECT" --configuration Release --no-build
+          --logger "trx;LogFileName=test-results.trx"
+          --results-directory ./TestResults
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-results
+          path: TestResults/*.trx
+          retention-days: 14
+
+  build-and-push-images:
+    name: Push ${{ matrix.service.image }}
+    needs: build-and-test
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - image: proxy-service
+            dockerfile: src/Services/LlmShadow.ProxyService/Dockerfile
+          - image: compare-service
+            dockerfile: src/Services/LlmShadow.CompareService/Dockerfile
+          - image: evaluator
+            dockerfile: src/Services/LlmShadow.Evaluator/Dockerfile
+          - image: secondary-processor
+            dockerfile: src/Services/LlmShadow.SecondaryProcessor/Dockerfile
+    env:
+      BUILD_ID: ${{ needs.build-and-test.outputs.build_id }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Install doctl
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
+      - name: Log in to DigitalOcean Container Registry
+        run: doctl registry login --expiry-seconds 1200
+
+      - name: Build & push ${{ matrix.service.image }}
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.service.dockerfile }}
+          push: true
+          build-args: |
+            BUILD_CONFIGURATION=Release
+          tags: |
+            registry.digitalocean.com/${{ vars.DO_REGISTRY }}/${{ matrix.service.image }}:${{ env.BUILD_ID }}
+            registry.digitalocean.com/${{ vars.DO_REGISTRY }}/${{ matrix.service.image }}:latest
+          cache-from: type=gha,scope=${{ matrix.service.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service.image }}
+
+  summary:
+    name: Publish build summary
+    needs: [build-and-test, build-and-push-images]
+    if: always() && needs.build-and-push-images.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Write summary
+        env:
+          BUILD_ID: ${{ needs.build-and-test.outputs.build_id }}
+          REGISTRY: ${{ vars.DO_REGISTRY }}
+        run: |
+          {
+            echo "## Build \`$BUILD_ID\`"
+            echo
+            echo "All 4 component images were pushed to \`registry.digitalocean.com/$REGISTRY\`:"
+            echo
+            echo "| Component | Image |"
+            echo "|---|---|"
+            echo "| ProxyService | \`$REGISTRY/proxy-service:$BUILD_ID\` |"
+            echo "| CompareService | \`$REGISTRY/compare-service:$BUILD_ID\` |"
+            echo "| Evaluator | \`$REGISTRY/evaluator:$BUILD_ID\` |"
+            echo "| SecondaryProcessor | \`$REGISTRY/secondary-processor:$BUILD_ID\` |"
+            echo
+            echo "Run the **Release** workflow with \`build_id: $BUILD_ID\` to deploy this build to dev, int, or prod."
+          } >> "$GITHUB_STEP_SUMMARY"

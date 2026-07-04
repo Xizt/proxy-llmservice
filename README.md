@@ -186,3 +186,30 @@ All secrets must be supplied via environment variables in production. Never comm
 | `Evaluator__BatchSize` | Records per evaluation cycle (default: 100) |
 | `Processor__MaxDegreeOfParallelism` | Concurrent shadow executions (default: 4) |
 | `Redis__MaxRetryCount` | Dead-letter threshold (default: 3) |
+
+## CI/CD Pipeline
+
+Two GitHub Actions workflows in `.github/workflows/` implement build/release separation:
+
+| Workflow | Trigger | What it does |
+|---|---|---|
+| `build.yml` | Push/PR to `main`, manual | Restores + builds `ProxyLlmService.sln`, runs `LlmShadow.UnitTests`, and (on push only) builds & pushes all 4 component images to DOCR tagged with a build id (short git SHA) |
+| `release.yml` | Manual (`workflow_dispatch`) | Takes a `build_id` + `environment` (dev/int/prod) input, verifies the images exist, then applies the matching `infra/app-platform/<environment>.app.yaml` spec via `doctl`/`digitalocean/app_action` to redeploy that exact build |
+
+Deploying is always a deliberate, two-step action: run **Build** to produce and publish a build id, then run **Release** with that `build_id` and the target `environment`.
+
+### DigitalOcean App Platform specs
+
+`infra/app-platform/{dev,int,prod}.app.yaml` each declare one DO App per environment (`llmshadow-dev`, `llmshadow-int`, `llmshadow-prod`) containing all 4 components: `proxy-service` and `compare-service` as web services, `secondary-processor` and `evaluator` as workers. Instance sizes/counts scale up per environment. Every environment-specific or sensitive value is a `${PLACEHOLDER}` — nothing is hardcoded or committed.
+
+### One-time repository setup (no secrets in the pipeline itself)
+
+1. **Create 3 GitHub Environments**: Settings → Environments → `dev`, `int`, `prod`.
+   - On `prod`, add required reviewers so every production release needs manual approval — this is the environment-level protection GitHub enforces before the `deploy` job runs, independent of the workflow YAML.
+2. **Per-environment secrets** (Settings → Environments → `<env>` → Secrets): `DIGITALOCEAN_ACCESS_TOKEN`, `DATABASE_CONNECTION_STRING`, `REDIS_CONNECTION_STRING`, `INFERENCE_MODEL_ACCESS_KEY`.
+3. **Per-environment variables** (Settings → Environments → `<env>` → Variables): `INFERENCE_PRIMARY_MODEL`, `INFERENCE_CANDIDATE_MODEL`.
+4. **Repository-level secret** (Settings → Secrets and variables → Actions → Secrets): `DIGITALOCEAN_ACCESS_TOKEN` — a registry-scoped token used only by `build.yml` to push images to DOCR.
+5. **Repository-level variable**: `DO_REGISTRY` — your DOCR registry name.
+6. **Bootstrap each DO App once** (first time only, out of band): `doctl apps create --spec infra/app-platform/dev.app.yaml` (repeat for `int`/`prod`) so the apps referenced by the specs exist before the first `release.yml` run.
+
+Because every secret lives in GitHub's encrypted, environment-scoped secret store and is only ever referenced as `${{ secrets.X }}` — never hardcoded, echoed, or committed — no credentials are stored in the pipeline definitions or the repository.
