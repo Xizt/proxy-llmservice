@@ -51,11 +51,12 @@ public sealed class RedisStreamConsumer : IShadowQueueConsumer
         int count,
         CancellationToken cancellationToken = default)
     {
+        // ">" is the special XREADGROUP cursor meaning "deliver only messages not yet delivered to any consumer"
         var entries = await _db.StreamReadGroupAsync(
             _options.StreamName,
             _options.ConsumerGroupName,
             _options.ConsumerName,
-            StreamPosition.UndeliveredMessages,
+            position: ">",
             count,
             noAck: false);
 
