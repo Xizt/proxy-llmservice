@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>LlmShadow.SecondaryProcessor</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\Shared\LlmShadow.Common\LlmShadow.Common.csproj" />
+    <ProjectReference Include="..\..\Shared\LlmShadow.Models\LlmShadow.Models.csproj" />
+    <ProjectReference Include="..\..\Shared\LlmShadow.DataLayer\LlmShadow.DataLayer.csproj" />
+    <ProjectReference Include="..\..\Shared\LlmShadow.Inference\LlmShadow.Inference.csproj" />
+    <ProjectReference Include="..\..\Shared\LlmShadow.Messaging\LlmShadow.Messaging.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="8.0.1" />
+    <PackageReference Include="Serilog.Extensions.Hosting" Version="8.0.0" />
+    <PackageReference Include="Serilog.Sinks.Console" Version="6.0.0" />
+  </ItemGroup>
+</Project>
